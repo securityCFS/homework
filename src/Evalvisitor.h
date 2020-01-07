@@ -19,19 +19,25 @@ struct Bre_ConExpr{
     bool type;
 };
 struct ReturnExpr{
-    antlrcpp::Any Expr;
+    antlrcpp::Any value;
 };
 class ErrorArgument{};
 class four_o_four_not_found{};
 class bad_trans_option{};
 class No_sign_matched{};
 class to_many_arguments{};
+class Parameter_undefined{};
+class Cannot_connect_function{};
+class Argument_does_not_match{};
 //the place here is used for defining global varieties,
 // please be careful while visiting this section
 
-std::map<string, antlrcpp::Any> linkname;
-std::map<string, antlrcpp::Any> function;
-std::map<string, antlrcpp::Any> tfpdefname;
+std::map<string, antlrcpp::Any> linkname;//main_variables
+std::map<string, antlrcpp::Any> Global_var;//global variables
+std::map<string, Python3Parser::FuncdefContext*> function;//var_name
+std::map<string,std::map<string, antlrcpp::Any>> local_var;//local variables
+bool inLocal = false;//visiting global or local
+vector<antlrcpp::Any> pass_variables;//used to pass on variables
 //this is the end of this period
 //program innercore functions
 size_t min(size_t a, size_t b)
@@ -75,13 +81,36 @@ void print(const antlrcpp::Any &clst)
     else if(clst.is<NameExpr>())
     {
         std::map<string, antlrcpp::Any>::iterator it;
-        it = linkname.find(clst.as<NameExpr>().Name);
-        if (it != linkname.end())
+        
+        if (inLocal)
         {
-            antlrcpp::Any rvst = it->second;
-            print(rvst);
+            it = linkname.find(clst.as<NameExpr>().Name);
+            if(it != linkname.end()){
+                antlrcpp::Any rvst = it->second;
+                print(rvst);
+            }
+            else
+            {
+                it = Global_var.find(clst.as<NameExpr>().Name);
+                if(it != Global_var.end())
+                {
+                    antlrcpp::Any rvst = it->second;
+                    print(rvst);
+                }
+                else throw ErrorArgument();
+            }
+            
         }
-        else throw ErrorArgument();
+        else
+        {
+            it = Global_var.find(clst.as<NameExpr>().Name);
+            if(it != Global_var.end())
+            {
+                antlrcpp::Any rvst = it->second;
+                print(rvst);
+            }
+            else throw ErrorArgument();
+        }
     }
 }
 void printvtr(antlrcpp::Any rcv)
@@ -203,6 +232,133 @@ bool ToBool(antlrcpp::Any op)
     }
     else throw ErrorArgument();
     return rt;    
+}
+binteger ToInt(antlrcpp::Any op)
+{
+    if(op.is<binteger>()) return op;
+    else if(op.is<string>())
+    {
+        string tmp = op.as<string>();
+        binteger bk(0), zero(0);
+        bool sign = true;
+        for(int i = 0; i < tmp.size(); i++)
+        {
+            if(i == 0 && (tmp[i] == '-' || tmp[i] == '+'))
+            {
+                if(tmp[i] == '-') sign = false;
+                continue;
+            }
+            bk *= 10;
+            if(tmp[i] - '0' > 9 || tmp[i] - '0' < 0)
+            {
+                throw ErrorArgument();
+            }
+            bk += binteger(tmp[i] - '0');
+        }
+        return (sign) ? bk : zero-bk;
+    }
+    else if(op.is<bool>())
+    {
+        return Type(op);
+    }
+    else if(op.is<double>())
+    {
+        binteger bk(int(op.as<double>()));
+        return bk;
+    }
+    else throw ErrorArgument();
+}
+double ToFloat(antlrcpp::Any op)
+{
+    if(op.is<double>())
+    {
+        return op.as<double>();
+    }
+    else if(op.is<binteger>())
+    {
+        return double(op.as<binteger>());
+    }
+    else if(op.is<bool>())
+    {
+        return (double)Type(op).as<binteger>();
+    }
+    else if(op.is<string>())
+    {
+        string tmp = op.as<string>();
+        int i;
+        bool f = true;
+        double rtn;
+        for(i = 0; i < tmp.size(); i++)
+        {
+            if(tmp[i] == '.')
+            {
+                f = false;
+                break;
+            }
+        }
+        if(f)
+        {
+            binteger bk(tmp);
+            rtn = (double)bk;
+        }
+        else
+        {
+            bool sign = (tmp[0] == '-');
+            if(sign)
+            {
+                tmp.erase(tmp.begin());
+            }
+            double x = 0, y = 0;
+            for (int j = 0; j < i; j++)
+            {
+                x *= 10;
+                if(tmp[i] - '0' > 9 || tmp[i] - '0' < 0) throw ErrorArgument();
+                x += tmp[j] - '0';
+            }
+            for(int j = tmp.size() - 1; j > i; j--)
+            {
+                y /= 10;
+                if(tmp[i] - '0' > 9 || tmp[i] - '0' < 0) throw ErrorArgument();
+                y += double(tmp[j] - '0') / 10;
+            }
+            rtn = (sign) ? -x - y : x + y;
+        }
+        return rtn;
+    }
+    else
+    {
+        throw ErrorArgument();
+    }
+    
+}
+string ToStr(antlrcpp::Any op)
+{
+    if(op.is<string>()) return op;
+    else if(op.is<binteger>()) return (string)op.as<binteger>();
+    else if(op.is<bool>())
+    {
+        string bk = (op.as<bool>()) ? "True" : "False";
+        return bk;
+    }
+    else if(op.is<double>())
+    {
+        int x;
+        double y,z = op.as<double>();
+        bool sign = true;
+        if(z < 0){
+            sign = false;
+            z = -z;
+        }
+        string bk = "";
+        x = int(z);
+        y = z - x;
+        y *= 100000;
+        binteger a(x), b(y);
+        if(!sign) bk = "-";
+        bk = bk + string(a) + "." + string(b);
+        return bk;
+    }
+    else throw ErrorArgument();
 }
 antlrcpp::Any plusargument(antlrcpp::Any op1, antlrcpp::Any op2, bool sign)
 {
@@ -359,15 +515,36 @@ antlrcpp::Any multiargument(antlrcpp::Any tp1, antlrcpp::Any tp2, char sign)
 antlrcpp::Any NameToValue(antlrcpp::Any rt)
 {
     std::map<string, antlrcpp::Any>::iterator it;
-    it = linkname.find(rt.as<NameExpr>().Name);
-    if(it != linkname.end())
-    {
-        rt = it->second;
+    if(inLocal){
+        it = linkname.find(rt.as<NameExpr>().Name);
+        if(it != linkname.end())
+        {
+            rt = it->second;
+        }
+        else
+        {
+            it = Global_var.find(rt.as<NameExpr>().Name);
+            if(it != Global_var.end())
+            {
+                rt = it->second;
+            }
+            else{
+                throw four_o_four_not_found();
+            }
+        }
     }
     else
     {
-        throw four_o_four_not_found();
+        it = Global_var.find(rt.as<NameExpr>().Name);
+        if(it != Global_var.end())
+        {
+            rt = it->second;
+        }
+        else{
+            throw four_o_four_not_found();
+        }
     }
+    
     return rt;
 }
 class EvalVisitor: public Python3BaseVisitor {
@@ -378,9 +555,55 @@ antlrcpp::Any visitFile_input(Python3Parser::File_inputContext *ctx) override
 
 antlrcpp::Any visitFuncdef(Python3Parser::FuncdefContext *ctx) override {
     string fun_name = ctx->NAME()->toString();
-    vector<antlrcpp::Any> para = visitParameters(ctx->parameters());
-    
-    return visitChildren(ctx);
+    auto it = function.find(fun_name);
+    if(it != function.end())
+    {
+        std::map<string, antlrcpp::Any> tmp = linkname;
+        auto it = local_var.find(fun_name);
+        if(it == local_var.end()) throw Parameter_undefined();
+        bool original_state = inLocal;
+        inLocal = true;
+        std::map<string, antlrcpp::Any> rcv_para = it->second;
+        //std::cout << "rcv_para's size is:" << rcv_para.size() << std::endl;
+        if(!pass_variables.empty())
+        {
+            for(int i = 0; i < pass_variables.size(); i++)
+            {
+                antlrcpp::Any value = pass_variables[i];
+                if(value.is<NameExpr>()) value = NameToValue(value);
+                string var_name = ctx->parameters()->typedargslist()->tfpdef(i)->NAME()->toString();
+                //std::cout << "variety name is: " << var_name << std::endl;
+                auto it_assign = rcv_para.find(var_name);
+                if(it_assign == rcv_para.end()) throw Argument_does_not_match();
+                it_assign->second = value;
+            }
+        }
+        linkname = rcv_para;
+        antlrcpp::Any bk = visitSuite(ctx->suite());
+        if(!bk.is<ReturnExpr>())
+        {
+            NoneExpr none;
+            ReturnExpr Rt;
+            Rt.value = none;
+            bk = Rt;
+        }
+        linkname = tmp;
+        inLocal = original_state;
+        return bk;
+    }
+    else//the first_time declaration can't call for a function;
+    {
+        function[fun_name] = ctx;
+        std::map<string, antlrcpp::Any> rcv;
+        if(ctx->parameters())
+        {
+            std::map<string, antlrcpp::Any> tpsv = visitParameters(ctx->parameters());
+            rcv = tpsv;
+        }
+        local_var[fun_name] = rcv;
+    }
+    return 0;
+    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitParameters(Python3Parser::ParametersContext *ctx) override {
@@ -390,26 +613,52 @@ antlrcpp::Any visitParameters(Python3Parser::ParametersContext *ctx) override {
     }
     else
     {
-        return nullptr;
+        std::map<string, antlrcpp::Any> bk;
+        return bk;
     }
 }
 
 antlrcpp::Any visitTypedargslist(Python3Parser::TypedargslistContext *ctx) override {
-    NoneExpr em;
-    int arg_size = ctx->tfpdef().size();
-    if(arg_size == 0) return em;
-    size_t equ_pos = ctx->ASSIGN(0)->getSymbol()->getTokenIndex();
-    for(int i = 0; i < arg_size; i++)
+    std::map<string, antlrcpp::Any> tmp_lkname;
+    int edit_begin = 0;
+    if(!ctx->tfpdef(0))
     {
-        //size_t arg_pos = ctx->tfpdef(i)->
+        return tmp_lkname;
     }
-    return visitChildren(ctx);
+    int size = ctx->tfpdef().size();
+    if(!ctx->test(0))
+    {
+        for(int i = 0; i < size; i++)
+        {
+            string name = visitTfpdef(ctx->tfpdef(i)).as<NameExpr>().Name;
+            NoneExpr none;
+            tmp_lkname[name] = none;
+        }
+        return tmp_lkname;
+    }
+    int defined = ctx->test().size();
+    int undef = size - defined;
+    for(int i = 0; i < undef; i++)
+    {
+        string name = visitTfpdef(ctx->tfpdef(i)).as<NameExpr>().Name;
+        NoneExpr none;
+        tmp_lkname[name] = none;
+    }
+    for(int i = 0; i < defined; i++)
+    {
+        string name = visitTfpdef(ctx->tfpdef(i + undef)).as<NameExpr>().Name;
+        antlrcpp::Any para = visitTest(ctx->test(i));
+        tmp_lkname[name] = para;
+    }
+    return tmp_lkname;
+    //return nullptr;
 }
 
 antlrcpp::Any visitTfpdef(Python3Parser::TfpdefContext *ctx) override {
-    return visitChildren(ctx);
+    NameExpr bk;
+    bk.Name = ctx->NAME()->toString();
+    return bk;
 }
-
 antlrcpp::Any visitStmt(Python3Parser::StmtContext *ctx) override {
     if(ctx->simple_stmt())
     {
@@ -456,21 +705,40 @@ antlrcpp::Any visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx) override {
                 {
                     antlrcpp::Any cmp = rcv2[i];
                     if(rcv2[i].is<NameExpr>()) cmp = NameToValue(cmp);
-
-                    if(linkname.empty())
-                    {
-                        linkname.insert(std::pair<string,antlrcpp::Any>(rcv1[i].as<NameExpr>().Name, cmp));
-                        continue;
-                    }
-                    std::map<string, antlrcpp::Any>::iterator it;
-                    it = linkname.find(rcv1[i].as<NameExpr>().Name);
-                    if(it != linkname.end())
-                    {
-                        it->second = cmp;
+                    if(inLocal){
+                        if(linkname.empty())
+                        {
+                            linkname.insert(std::pair<string,antlrcpp::Any>(rcv1[i].as<NameExpr>().Name, cmp));
+                            continue;
+                        }
+                        std::map<string, antlrcpp::Any>::iterator it;
+                        it = linkname.find(rcv1[i].as<NameExpr>().Name);
+                        if(it != linkname.end())
+                        {
+                            it->second = cmp;
+                        }
+                        else
+                        {
+                            linkname[rcv1[i].as<NameExpr>().Name] = cmp;
+                        }
                     }
                     else
                     {
-                        linkname[rcv1[i].as<NameExpr>().Name] = cmp;
+                        if(Global_var.empty())
+                        {
+                            Global_var.insert(std::pair<string,antlrcpp::Any>(rcv1[i].as<NameExpr>().Name, cmp));
+                            continue;
+                        }
+                        std::map<string, antlrcpp::Any>::iterator it;
+                        it = Global_var.find(rcv1[i].as<NameExpr>().Name);
+                        if(it != Global_var.end())
+                        {
+                            it->second = cmp;
+                        }
+                        else
+                        {
+                            Global_var[rcv1[i].as<NameExpr>().Name] = cmp;
+                        }
                     }
                 }
             }
@@ -492,84 +760,168 @@ antlrcpp::Any visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx) override {
                 }
                 tmp = NameToValue(op1);
                 std::map<string, antlrcpp::Any>::iterator it;
-                it = linkname.find(op1.as<NameExpr>().Name);
-                if(sign == "+=")
-                {
-                    binteger one(1);
-                    if(it != linkname.end())
+                if(inLocal){
+                    it = linkname.find(op1.as<NameExpr>().Name);
+                    if(sign == "+=")
                     {
-                        tmp = plusargument(tmp, op2, true);
-                        it->second = tmp;
+                        binteger one(1);
+                        if(it != linkname.end())
+                        {
+                            tmp = plusargument(tmp, op2, true);
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "-=")
+                    {
+                        if(it != linkname.end())
+                        {
+                            tmp = plusargument(tmp, op2, false);
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "*=")
+                    {  
+                        if(it != linkname.end())
+                        {
+                            tmp = multiargument(tmp, op2, '*');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "/=")
+                    {
+                        if(it != linkname.end())
+                        {
+                            tmp = multiargument(tmp, op2, '/');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "//=")
+                    {
+                        if(it != linkname.end())
+                        {   
+                            tmp = multiargument(tmp, op2, '!');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "%=")
+                    {
+                        if(it != linkname.end())
+                        {
+                            tmp = multiargument(tmp, op2, '%');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
                     }
                     else
                     {
-                        throw ErrorArgument();
-                    }
-                }
-                else if(sign == "-=")
-                {
-                    if(it != linkname.end())
-                    {
-                        tmp = plusargument(tmp, op2, false);
-                        it->second = tmp;
-                    }
-                    else
-                    {
-                        throw ErrorArgument();
-                    }
-                }
-                else if(sign == "*=")
-                {  
-                    if(it != linkname.end())
-                    {
-                        tmp = multiargument(tmp, op2, '*');
-                        it->second = tmp;
-                    }
-                    else
-                    {
-                        throw ErrorArgument();
-                    }
-                }
-                else if(sign == "/=")
-                {
-                    if(it != linkname.end())
-                    {
-                        tmp = multiargument(tmp, op2, '/');
-                        it->second = tmp;
-                    }
-                    else
-                    {
-                        throw ErrorArgument();
-                    }
-                }
-                else if(sign == "//=")
-                {
-                    if(it != linkname.end())
-                    {
-                        tmp = multiargument(tmp, op2, '!');
-                        it->second = tmp;
-                    }
-                    else
-                    {
-                        throw ErrorArgument();
-                    }
-                }
-                else if(sign == "%=")
-                {
-                    if(it != linkname.end())
-                    {
-                        tmp = multiargument(tmp, op2, '%');
-                        it->second = tmp;
-                    }
-                    else
-                    {
-                        throw ErrorArgument();
+                        throw No_sign_matched();
                     }
                 }
                 else
                 {
-                    throw No_sign_matched();
+                    it = Global_var.find(op1.as<NameExpr>().Name);
+                    if(sign == "+=")
+                    {
+                        binteger one(1);
+                        if(it != Global_var.end())
+                        {
+                            tmp = plusargument(tmp, op2, true);
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "-=")
+                    {
+                        if(it != Global_var.end())
+                        {
+                            tmp = plusargument(tmp, op2, false);
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "*=")
+                    {  
+                        if(it != Global_var.end())
+                        {
+                            tmp = multiargument(tmp, op2, '*');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "/=")
+                    {
+                        if(it != Global_var.end())
+                        {
+                            tmp = multiargument(tmp, op2, '/');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "//=")
+                    {
+                        if(it != Global_var.end())
+                        {   
+                            tmp = multiargument(tmp, op2, '!');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else if(sign == "%=")
+                    {
+                        if(it != Global_var.end())
+                        {
+                            tmp = multiargument(tmp, op2, '%');
+                            it->second = tmp;
+                        }
+                        else
+                        {
+                            throw ErrorArgument();
+                        }
+                    }
+                    else
+                    {
+                        throw No_sign_matched();
+                    }
                 }
+                
             }
         }    
     }
@@ -638,7 +990,6 @@ antlrcpp::Any visitContinue_stmt(Python3Parser::Continue_stmtContext *ctx) overr
 antlrcpp::Any visitReturn_stmt(Python3Parser::Return_stmtContext *ctx) override {
     if(ctx->testlist())
     {
-        ReturnExpr bk;
         vector<antlrcpp::Any> tmp = visitTestlist(ctx->testlist());
         if(tmp.size() > 1)
         {
@@ -647,17 +998,17 @@ antlrcpp::Any visitReturn_stmt(Python3Parser::Return_stmtContext *ctx) override 
         }
         antlrcpp::Any fun = tmp[0];
         if(fun.is<NameExpr>()) fun = NameToValue(fun);
-        bk.Expr = fun;
+        ReturnExpr bk;
+        bk.value = fun;
         return bk;
     }
     else
     {
+        NoneExpr vl;
         ReturnExpr bk;
-        NoneExpr fl;
-        bk.Expr = fl;
+        bk.value = vl;
         return bk;
     }
-    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitCompound_stmt(Python3Parser::Compound_stmtContext *ctx) override {
@@ -673,7 +1024,8 @@ antlrcpp::Any visitCompound_stmt(Python3Parser::Compound_stmtContext *ctx) overr
     {
         return visitFuncdef(ctx->funcdef());
     }
-    return visitChildren(ctx);
+    else return nullptr;
+    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitIf_stmt(Python3Parser::If_stmtContext *ctx) override {
@@ -713,7 +1065,8 @@ antlrcpp::Any visitIf_stmt(Python3Parser::If_stmtContext *ctx) override {
         return nullptr;
         
     }
-    return visitChildren(ctx);
+    return nullptr;
+    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitWhile_stmt(Python3Parser::While_stmtContext *ctx) override {
@@ -722,19 +1075,17 @@ antlrcpp::Any visitWhile_stmt(Python3Parser::While_stmtContext *ctx) override {
     while (ToBool(condition))
     {
         int size = ctx->suite()->stmt().size();
-        //std::cout << "passing test, size " << size << std::endl;
         antlrcpp::Any tmp = visitSuite(ctx->suite());
         condition = visitTest(ctx->test());
         if(condition.is<NameExpr>()) condition = NameToValue(condition);
         if(tmp.is<Bre_ConExpr>())
         {
-            //std::cout << "Break/Continue Expression Detected!\n";
             if(tmp.as<Bre_ConExpr>().type) break;
             else continue;
         }
+        else if(tmp.is<ReturnExpr>()) return tmp;
     }
     return nullptr;
-    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitSuite(Python3Parser::SuiteContext *ctx) override {
@@ -749,10 +1100,11 @@ antlrcpp::Any visitSuite(Python3Parser::SuiteContext *ctx) override {
         {
             tmp = visitStmt(ctx->stmt(i));
             if(tmp.is<Bre_ConExpr>()) return tmp;
+            else if(tmp.is<ReturnExpr>()) return tmp;
         }
         return tmp;
     }
-    return visitChildren(ctx);
+    return nullptr;
 }
 
 antlrcpp::Any visitTest(Python3Parser::TestContext *ctx) override {
@@ -856,7 +1208,7 @@ antlrcpp::Any visitComparison(Python3Parser::ComparisonContext *ctx) override {
         }
         else return visitArith_expr(ctx->arith_expr(0));
     }
-    return visitChildren(ctx);
+    return nullptr;
 }
 
  antlrcpp::Any visitComp_op(Python3Parser::Comp_opContext *ctx) override {
@@ -1048,17 +1400,50 @@ antlrcpp::Any visitTerm(Python3Parser::TermContext *ctx) override {
     if(ctx->trailer())
     {
         antlrcpp::Any nlst, clst;
-        clst = visitTrailer(ctx->trailer());
+        vector<antlrcpp::Any> rcv = visitTrailer(ctx->trailer());
         nlst = visitAtom(ctx->atom());
         auto it = function.find(nlst.as<NameExpr>().Name);
         if(nlst.as<NameExpr>().Name == "print")
         {
-            printvtr(clst);
+            printvtr(rcv);
+        }
+        else if(nlst.as<NameExpr>().Name == "int")
+        {
+            clst = rcv[0];
+            if(clst.is<NameExpr>()) clst = NameToValue(clst);
+            return ToInt(clst);
+        }
+        else if(nlst.as<NameExpr>().Name == "bool")
+        {
+            clst = rcv[0];
+            if(clst.is<NameExpr>()) clst = NameToValue(clst);
+            return ToBool(clst);
+        }
+        else if(nlst.as<NameExpr>().Name == "float")
+        {
+            clst = rcv[0];
+            if(clst.is<NameExpr>()) clst = NameToValue(clst);
+            return ToFloat(clst);
+        }
+        else if(nlst.as<NameExpr>().Name == "str")
+        {
+            clst = rcv[0];
+            if(clst.is<NameExpr>()) clst = NameToValue(clst);
+            return ToStr(clst);
         }
         else if(it != function.end())
         {
-            //waiting for edition
-            //???
+            vector<antlrcpp::Any> tmp = pass_variables;
+            pass_variables = rcv;
+            antlrcpp::Any bkn = visitFuncdef(it->second);
+            if(!bkn.is<ReturnExpr>())
+            {
+                std::cout << "FUNCTION ERROR!!!! PROGRAM TERMINATED!!!\n";
+                throw Cannot_connect_function();
+            }
+            pass_variables = tmp;
+            bkn = bkn.as<ReturnExpr>().value;
+            return bkn;
         }
         else
         {
@@ -1078,7 +1463,12 @@ antlrcpp::Any visitTrailer(Python3Parser::TrailerContext *ctx) override {
     {
         return visitArglist(ctx->arglist());
     }
-    return visitChildren(ctx);
+    else
+    {
+        vector<antlrcpp::Any> bk;
+        return bk;
+    }
+    //return visitChildren(ctx);
 }
 
 antlrcpp::Any visitAtom(Python3Parser::AtomContext *ctx) override {
@@ -1137,7 +1527,7 @@ antlrcpp::Any visitAtom(Python3Parser::AtomContext *ctx) override {
             bool sign = (tmp[0] == '-');
             if(sign)
             {
-                std::cout<<"- sign marked\n";
+                //std::cout<<"- sign marked\n";
                 tmp.erase(tmp.begin());
             }
             double x = 0, y = 0;
@@ -1207,7 +1597,6 @@ antlrcpp::Any visitArgument(Python3Parser::ArgumentContext *ctx) override {
 
     if(ctx->test())
     {
-        //std::cout<<"visitedargument\n";
         return visitTest(ctx->test());
     }
     return visitChildren(ctx);
