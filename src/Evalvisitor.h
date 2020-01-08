@@ -550,7 +550,21 @@ antlrcpp::Any NameToValue(antlrcpp::Any rt)
 class EvalVisitor: public Python3BaseVisitor {
 antlrcpp::Any visitFile_input(Python3Parser::File_inputContext *ctx) override
 {
-    return visitChildren(ctx);
+    for(int i = 0; i < ctx->stmt().size(); i++)
+    {
+        antlrcpp::Any tmp = visitStmt(ctx->stmt(i));
+    }
+    Global_var.clear();
+    linkname.clear();
+    function.clear();
+    auto it = local_var.begin();
+    while(it != local_var.end())
+    {
+        it->second.clear();
+        it++;
+    }
+    local_var.clear();
+    return 0;
 }
 
 antlrcpp::Any visitFuncdef(Python3Parser::FuncdefContext *ctx) override {
@@ -564,7 +578,6 @@ antlrcpp::Any visitFuncdef(Python3Parser::FuncdefContext *ctx) override {
         bool original_state = inLocal;
         inLocal = true;
         std::map<string, antlrcpp::Any> rcv_para = it->second;
-        //std::cout << "rcv_para's size is:" << rcv_para.size() << std::endl;
         if(!pass_variables.empty())
         {
             for(int i = 0; i < pass_variables.size(); i++)
@@ -580,6 +593,8 @@ antlrcpp::Any visitFuncdef(Python3Parser::FuncdefContext *ctx) override {
         }
         linkname = rcv_para;
         antlrcpp::Any bk = visitSuite(ctx->suite());
+        linkname = tmp;
+        inLocal = original_state;
         if(!bk.is<ReturnExpr>())
         {
             NoneExpr none;
@@ -587,8 +602,6 @@ antlrcpp::Any visitFuncdef(Python3Parser::FuncdefContext *ctx) override {
             Rt.value = none;
             bk = Rt;
         }
-        linkname = tmp;
-        inLocal = original_state;
         return bk;
     }
     else//the first_time declaration can't call for a function;
@@ -668,7 +681,7 @@ antlrcpp::Any visitStmt(Python3Parser::StmtContext *ctx) override {
     {
         return visitCompound_stmt(ctx->compound_stmt());
     }
-    else return visitChildren(ctx);
+    else return 0;
 }
 
 antlrcpp::Any visitSimple_stmt(Python3Parser::Simple_stmtContext *ctx) override {
@@ -676,7 +689,7 @@ antlrcpp::Any visitSimple_stmt(Python3Parser::Simple_stmtContext *ctx) override 
     {
         return visitSmall_stmt(ctx->small_stmt());
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitSmall_stmt(Python3Parser::Small_stmtContext *ctx) override {
@@ -688,7 +701,7 @@ antlrcpp::Any visitSmall_stmt(Python3Parser::Small_stmtContext *ctx) override {
     {
         return visitFlow_stmt(ctx->flow_stmt());
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx) override {
@@ -923,9 +936,13 @@ antlrcpp::Any visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx) override {
                 }
                 
             }
-        }    
+        }
+        else if(ctx->testlist().size() == 1) 
+        {
+            return visitTestlist(ctx->testlist(0));
+        }
     }
-    return visitChildren(ctx);
+    return 0;
 }
 antlrcpp::Any visitAugassign(Python3Parser::AugassignContext *ctx) override {
     if(ctx->ADD_ASSIGN())
@@ -1113,7 +1130,7 @@ antlrcpp::Any visitTest(Python3Parser::TestContext *ctx) override {
         //std::cout<<"visitedtest\n";
         return visitOr_test(ctx->or_test());
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
  antlrcpp::Any visitOr_test(Python3Parser::Or_testContext *ctx) override {
@@ -1135,7 +1152,7 @@ antlrcpp::Any visitTest(Python3Parser::TestContext *ctx) override {
         }
         else return visitAnd_test(ctx->and_test(0)); 
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitAnd_test(Python3Parser::And_testContext *ctx) override {
@@ -1160,7 +1177,7 @@ antlrcpp::Any visitAnd_test(Python3Parser::And_testContext *ctx) override {
         }
         else return visitNot_test(ctx->not_test(0));
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitNot_test(Python3Parser::Not_testContext *ctx) override {
@@ -1184,7 +1201,7 @@ antlrcpp::Any visitNot_test(Python3Parser::Not_testContext *ctx) override {
         }
         else return visitNot_test(ctx->not_test());
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitComparison(Python3Parser::ComparisonContext *ctx) override {
@@ -1300,7 +1317,7 @@ antlrcpp::Any visitArith_expr(Python3Parser::Arith_exprContext *ctx) override {
         
     }
 
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitTerm(Python3Parser::TermContext *ctx) override {
@@ -1371,7 +1388,7 @@ antlrcpp::Any visitTerm(Python3Parser::TermContext *ctx) override {
         }
         else return visitFactor(ctx->factor(0));
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
  antlrcpp::Any visitFactor(Python3Parser::FactorContext *ctx) override {
@@ -1393,7 +1410,7 @@ antlrcpp::Any visitTerm(Python3Parser::TermContext *ctx) override {
         }
         return bk;
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
  antlrcpp::Any visitAtom_expr(Python3Parser::Atom_exprContext *ctx) override {
@@ -1436,12 +1453,12 @@ antlrcpp::Any visitTerm(Python3Parser::TermContext *ctx) override {
             vector<antlrcpp::Any> tmp = pass_variables;
             pass_variables = rcv;
             antlrcpp::Any bkn = visitFuncdef(it->second);
+            pass_variables = tmp;
             if(!bkn.is<ReturnExpr>())
             {
                 std::cout << "FUNCTION ERROR!!!! PROGRAM TERMINATED!!!\n";
                 throw Cannot_connect_function();
             }
-            pass_variables = tmp;
             bkn = bkn.as<ReturnExpr>().value;
             return bkn;
         }
@@ -1577,7 +1594,7 @@ antlrcpp::Any visitTestlist(Python3Parser::TestlistContext *ctx) override {
         }
         return bk;
     }
-    return visitChildren(ctx);
+    return 0;
 }
 
 antlrcpp::Any visitArglist(Python3Parser::ArglistContext *ctx) override {
